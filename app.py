@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, session
+from flask import Flask, render_template, request, session
 from src.helper import download_hugging_face_embeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain_openai import ChatOpenAI
@@ -34,7 +34,7 @@ llm = ChatOpenAI(
     model="google/gemma-3-27b-it:free",  
     base_url="https://openrouter.ai/api/v1",
     api_key=OPENROUTER_API_KEY,
-    temperature = 0
+    temperature=0
 )
 
 # Prompt template with chat history support
@@ -175,4 +175,4 @@ def chat():
     return str(answer)
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port= 8080, debug= True)
+    app.run(host="0.0.0.0", port=8080, debug=True)
