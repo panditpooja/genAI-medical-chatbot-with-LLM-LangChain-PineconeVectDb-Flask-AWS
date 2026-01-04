@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, session
+from flask import Flask, render_template, request, session, jsonify
 from src.helper import download_hugging_face_embeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain_openai import ChatOpenAI
@@ -7,19 +7,37 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 from dotenv import load_dotenv
 from src.prompt import *
+from src.metrics import metrics_tracker
+from src.retriever_wrapper import TimedRetriever
 import os
 import re
+import time
+
+load_dotenv() #Load the environment variables from the .env file
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)
-load_dotenv()
+app.secret_key = os.urandom(24).hex()
 
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
+# Validate API keys are set
+if not OPENROUTER_API_KEY:
+    raise ValueError(
+        "OPENROUTER_API_KEY is not set in environment variables. "
+        "Please create a .env file with your OpenRouter API key. "
+        "See README.md for setup instructions."
+    )
+if not PINECONE_API_KEY:
+    raise ValueError(
+        "PINECONE_API_KEY is not set in environment variables. "
+        "Please create a .env file with your Pinecone API key. "
+        "See README.md for setup instructions."
+    )
+
 embeddings = download_hugging_face_embeddings()
 
-index_name = "medical-chatbot" 
+index_name = "medical-chatbot"
 
 # Connect to existing Vector DB
 docsearch = PineconeVectorStore.from_existing_index(
@@ -27,11 +45,13 @@ docsearch = PineconeVectorStore.from_existing_index(
     embedding=embeddings
 )
 
-retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k":3})
+base_retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k":3})
+# Wrap retriever to track retrieval latency
+retriever = TimedRetriever(base_retriever, metrics_tracker)
 
 # Defining the model
 llm = ChatOpenAI(
-    model="google/gemma-3-27b-it:free",  
+    model="google/gemma-3-27b-it:free",
     base_url="https://openrouter.ai/api/v1",
     api_key=OPENROUTER_API_KEY,
     temperature=0
@@ -39,7 +59,7 @@ llm = ChatOpenAI(
 
 # Prompt template with chat history support
 prompt_template = (
-    system_prompt + 
+    system_prompt +
     "\n\n=== PREVIOUS CONVERSATION HISTORY ===\n{chat_history}\n=== END OF CONVERSATION HISTORY ===\n\n"
     "CRITICAL INSTRUCTIONS:"
     "\n- If the conversation history above shows 'No previous conversation', this is the FIRST message."
@@ -63,12 +83,31 @@ def index():
         session.modified = True
     return render_template('chat.html')
 
+@app.route("/metrics")
+def metrics():
+    """
+    Endpoint to view latency metrics.
+    
+    NOTE: In multi-worker deployments (e.g., gunicorn), this shows metrics
+    only for the worker process that handles this request. Metrics are NOT
+    aggregated across all workers.
+    """
+    metrics_data = metrics_tracker.get_metrics()
+    return jsonify(metrics_data)
+
+@app.route("/metrics/summary")
+def metrics_summary():
+    """Endpoint to view formatted metrics summary."""
+    summary = metrics_tracker.get_summary()
+    return f"<pre>{summary}</pre>"
+
 def check_dangerous_keywords(message):
     """Check if message contains dangerous/suicidal keywords and return appropriate response"""
     dangerous_keywords = [
         'suicidal', 'suicide', 'kill myself', 'end my life', 'want to die',
         'harm myself', 'self harm', 'hurting myself', 'thoughts of suicide',
-        'thinking about suicide', 'considering suicide'
+        'thinking about suicide', 'considering suicide', 'don\'t want to live', 
+        'don\'t want to be here', 'don\'t want to be alive'
     ]
     
     message_lower = message.lower()
@@ -131,6 +170,9 @@ def chat():
     gratitude_keywords = ['thanks', 'thank you', 'appreciate', 'grateful', 'helpful']
     is_gratitude = any(keyword in msg_lower for keyword in gratitude_keywords) and len(msg.split()) < 15
     
+    # Start timing for end-to-end latency
+    total_start_time = time.perf_counter()
+    
     if is_gratitude and session["chat_history"]:
         # For gratitude messages, respond conversationally without RAG
         # Use a simple LLM call with just the conversation history
@@ -154,6 +196,10 @@ def chat():
             "chat_history": chat_history_str
         })
         answer = response["answer"]
+    
+    # Calculate and record total end-to-end latency
+    total_latency_seconds = time.perf_counter() - total_start_time
+    metrics_tracker.record_total_latency(total_latency_seconds)
     
     # Clean up excessive whitespace: strip leading/trailing and normalize multiple newlines
     answer = answer.strip()  # Remove leading/trailing whitespace
