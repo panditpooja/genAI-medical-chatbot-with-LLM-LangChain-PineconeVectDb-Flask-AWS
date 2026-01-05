@@ -1,22 +1,97 @@
+import os
+import re
+import time
+import redis
+
 from flask import Flask, render_template, request, session, jsonify
+from flask_session import Session
+from dotenv import load_dotenv
+
 from src.helper import download_hugging_face_embeddings
+from src.prompt import system_prompt
+from src.metrics import metrics_tracker
+from src.retriever_wrapper import TimedRetriever
+
 from langchain_pinecone import PineconeVectorStore
 from langchain_openai import ChatOpenAI
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
-from dotenv import load_dotenv
-from src.prompt import *
-from src.metrics import metrics_tracker
-from src.retriever_wrapper import TimedRetriever
-import os
-import re
-import time
 
 load_dotenv() #Load the environment variables from the .env file
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24).hex()
+app.secret_key = os.getenv("FLASK_SECRET_KEY") or os.urandom(24).hex()
+
+# Configure Redis for server-side sessions
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
+REDIS_DB = int(os.getenv("REDIS_DB", 0))
+
+# Redis connection configuration
+redis_config = {
+    "host": REDIS_HOST,
+    "port": REDIS_PORT,
+    "db": REDIS_DB,
+    "decode_responses": False,
+    "socket_connect_timeout": 5,  # 5 second timeout
+    "socket_timeout": 5,
+    "retry_on_timeout": True
+}
+if REDIS_PASSWORD:
+    redis_config["password"] = REDIS_PASSWORD
+
+# Create Redis connection for Flask-Session
+# Try to connect to Redis, but fall back to filesystem sessions for development
+USE_REDIS = os.getenv("USE_REDIS", "true").lower() == "true"
+redis_available = False
+redis_client = None
+
+if USE_REDIS:
+    try:
+        redis_client = redis.Redis(**redis_config)
+        # Test connection
+        redis_client.ping()
+        redis_available = True
+        print("✓ Connected to Redis - using Redis-based sessions")
+    except (redis.ConnectionError, redis.TimeoutError) as e:
+        print(f"⚠ Warning: Could not connect to Redis at {REDIS_HOST}:{REDIS_PORT}")
+        print(f"  Error: {str(e)}")
+        print(f"  Falling back to filesystem sessions for development")
+        print(f"  To use Redis: Install Redis and start it, or set USE_REDIS=false in .env")
+        redis_available = False
+        redis_client = None
+
+# Configure Flask-Session
+# Each user gets a unique session ID, and their chat history is stored separately
+# This ensures thread-safety: User 1's session is completely isolated from User 2's session
+if redis_available:
+    # Use Redis for server-side sessions (production-ready)
+    app.config["SESSION_TYPE"] = "redis"
+    app.config["SESSION_REDIS"] = redis_client
+    app.config["SESSION_KEY_PREFIX"] = "medical_chatbot:session:"  # Prefix for Redis keys (unique per session)
+else:
+    # Use filesystem sessions as fallback (development only)
+    # Note: Filesystem sessions work for single-server deployment but won't scale across multiple servers
+    app.config["SESSION_TYPE"] = "filesystem"
+    app.config["SESSION_FILE_DIR"] = os.path.join(os.getcwd(), "flask_session")  # Directory to store session files
+    app.config["SESSION_FILE_THRESHOLD"] = 500  # Maximum number of sessions stored
+
+# Common session settings
+app.config["SESSION_PERMANENT"] = False  # Sessions expire when browser closes
+app.config["SESSION_USE_SIGNER"] = True  # Sign session cookie for security
+app.config["SESSION_COOKIE_SECURE"] = False  # Set to True in production with HTTPS
+app.config["SESSION_COOKIE_HTTPONLY"] = True  # Prevent JavaScript access
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"  # CSRF protection
+app.config["PERMANENT_SESSION_LIFETIME"] = 3600  # 1 hour
+
+
+# Initialize Flask-Session
+# This ensures each user's session is stored in Redis/filesystem with a unique key
+# Thread-safety is guaranteed: Flask-Session uses the session ID from the cookie
+# to retrieve the correct session data for each request
+session_interface = Session(app)
 
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -101,13 +176,24 @@ def metrics_summary():
     summary = metrics_tracker.get_summary()
     return f"<pre>{summary}</pre>"
 
+@app.route("/debug/session")
+def debug_session():
+    """Debug endpoint to inspect session data."""
+    return jsonify({
+        "session_keys": list(session.keys()),
+        "chat_history_len": len(session.get("chat_history", [])),
+        "chat_history_preview": session.get("chat_history", [])[-6:],  # last 3 turns
+    })
+
 def check_dangerous_keywords(message):
     """Check if message contains dangerous/suicidal keywords and return appropriate response"""
     dangerous_keywords = [
         'suicidal', 'suicide', 'kill myself', 'end my life', 'want to die',
         'harm myself', 'self harm', 'hurting myself', 'thoughts of suicide',
         'thinking about suicide', 'considering suicide', 'don\'t want to live', 
-        'don\'t want to be here', 'don\'t want to be alive'
+        'don\'t want to be here', 'don\'t want to be alive', "ending my life", 
+        "end it all", "kill me", "take my life", "i can't go on", 
+        "i want to disappear", "no reason to live"
     ]
     
     message_lower = message.lower()

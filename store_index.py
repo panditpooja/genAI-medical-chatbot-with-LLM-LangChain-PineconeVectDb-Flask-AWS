@@ -8,7 +8,6 @@ load_dotenv()
 
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 
-
 extracted_data = load_pdf_files(data='data/')
 filter_data = filter_to_minimal_docs(extracted_data)
 text_chunks = text_split(filter_data)

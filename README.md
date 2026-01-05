@@ -1,4 +1,4 @@
-# Build-a-Complete-Medical-Chatbot-with-LLMs-LangChain-Pinecone-Flask-AWS
+# GenAI Medical Chatbot (LangChain + Pinecone + Flask + AWS)
 
 A comprehensive medical chatbot application built with LangChain, Pinecone Vector Database, Flask, and deployed on AWS. This chatbot uses Retrieval Augmented Generation (RAG) to provide accurate medical information based on a knowledge base of medical documents.
 
@@ -7,8 +7,10 @@ A comprehensive medical chatbot application built with LangChain, Pinecone Vecto
 - 🤖 **RAG-based Medical Assistant**: Answers medical questions using context from uploaded medical documents
 - 💬 **Conversation Memory**: Maintains conversation history during the session
 - 🚨 **Emergency Response**: Automatically detects and responds to suicidal/dangerous queries with appropriate resources
+- 🏥 **Medical Focus**: Automatically redirects non-medical questions to keep conversations on medical topics
 - 🔍 **Semantic Search**: Uses Pinecone vector database for efficient document retrieval
 - 📊 **Performance Monitoring**: Real-time latency metrics tracking with P50/P95 percentiles
+- 🐛 **Debug Tools**: Session inspection endpoint for debugging
 - 💻 **Web Interface**: Clean, responsive chat interface built with Flask and Bootstrap
 - ☁️ **AWS Deployment**: Ready for deployment on AWS EC2 with Docker and GitHub Actions CI/CD
 
@@ -29,6 +31,7 @@ A comprehensive medical chatbot application built with LangChain, Pinecone Vecto
 
 - Python 3.8 or higher
 - Anaconda or Python virtual environment
+- Redis server (for session storage)
 - Pinecone API key
 - OpenRouter API key (for LLM access)
 - AWS account (for deployment)
@@ -75,7 +78,52 @@ conda activate medical-chatbot
 pip install -r requirements.txt
 ```
 
-### STEP 04 - Configure Environment Variables
+### STEP 04 - Install and Start Redis
+
+**Redis is recommended for server-side session storage (chat history).**
+
+**Note:** The application will automatically fall back to filesystem sessions if Redis is not available. However, Redis is recommended for production use.
+
+**Windows:**
+1. **Option A (Recommended - WSL):**
+   - Install WSL (Windows Subsystem for Linux)
+   - In WSL terminal: `sudo apt-get update && sudo apt-get install redis-server`
+   - Start Redis: `sudo service redis-server start` or `redis-server`
+
+2. **Option B (Native Windows):**
+   - Download Redis from https://github.com/microsoftarchive/redis/releases
+   - Extract and run `redis-server.exe` from the extracted folder
+   - Or install via Memurai (Redis-compatible): https://www.memurai.com/
+
+3. **Option C (Docker):**
+   - Install Docker Desktop
+   - Run: `docker run -d -p 6379:6379 redis:alpine`
+
+4. **Option D (Skip Redis for Development):**
+   - Set `USE_REDIS=false` in your `.env` file
+   - The app will use filesystem sessions (works for single-user development)
+
+**Linux/Mac:**
+```bash
+# Ubuntu/Debian
+sudo apt-get install redis-server
+sudo systemctl start redis-server
+
+# Mac (using Homebrew)
+brew install redis
+brew services start redis
+
+# Or run directly
+redis-server
+```
+
+**Verify Redis is running:**
+```bash
+redis-cli ping
+# Should return: PONG
+```
+
+### STEP 05 - Configure Environment Variables
 
 Create a `.env` file in the root directory and add your API credentials:
 
@@ -84,12 +132,23 @@ PINECONE_API_KEY=your_pinecone_api_key_here
 OPENROUTER_API_KEY=your_openrouter_api_key_here
 ```
 
+**Optional Redis configuration (defaults shown):**
+```ini
+USE_REDIS=true
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+REDIS_PASSWORD=
+```
+
+**Note:** If Redis is not available, the application will automatically fall back to filesystem sessions for development. For production, Redis is recommended for better performance and multi-server support.
+
 **Note:** For production, you can also set `FLASK_SECRET_KEY` in the `.env` file:
 ```ini
 FLASK_SECRET_KEY=your_secret_key_here
 ```
 
-### STEP 05 - Store Embeddings to Pinecone
+### STEP 06 - Store Embeddings to Pinecone
 
 Before running the application, you need to process your medical documents and store them in Pinecone:
 
@@ -105,7 +164,7 @@ This script will:
 
 **Note:** Make sure you have PDF files in the `data/` directory before running this command.
 
-### STEP 06 - Run the Application
+### STEP 07 - Run the Application
 
 ```bash
 python app.py
@@ -113,7 +172,7 @@ python app.py
 
 The application will start on `http://0.0.0.0:8080`
 
-### STEP 07 - Access the Chatbot
+### STEP 08 - Access the Chatbot
 
 Open your browser and navigate to:
 
@@ -129,9 +188,9 @@ You should see the medical chatbot interface. Start chatting!
 genAI/
 ├── app.py                 # Main Flask application
 ├── store_index.py         # Script to store embeddings in Pinecone
-├── view_metrics.py        # Command-line utility to view latency metrics
 ├── requirements.txt       # Python dependencies
 ├── setup.py              # Package setup file
+├── Dockerfile             # Docker configuration for deployment
 ├── .env                  # Environment variables (create this)
 ├── data/                 # Medical PDF documents directory
 │   └── Medical_book.pdf
@@ -151,9 +210,10 @@ genAI/
 
 1. **First Interaction**: The chatbot will greet you if you say hello or introduce yourself
 2. **Medical Questions**: Ask any medical question based on the documents in your knowledge base
-3. **Conversation Context**: The chatbot remembers the conversation during the session
-4. **Emergency Detection**: If you mention suicidal thoughts, the chatbot will provide emergency resources
-5. **Unknown Questions**: If the chatbot doesn't have information, it will suggest consulting healthcare professionals
+3. **Non-Medical Questions**: The chatbot will politely redirect non-medical questions and ask you to focus on medical topics
+4. **Conversation Context**: The chatbot remembers the conversation during the session
+5. **Emergency Detection**: If you mention suicidal thoughts, the chatbot will provide emergency resources
+6. **Unknown Questions**: If the chatbot doesn't have information, it will suggest consulting healthcare professionals
 
 ## Performance Monitoring
 
@@ -170,17 +230,8 @@ The application tracks latency metrics to monitor performance:
 - JSON format: `http://localhost:8080/metrics` - Returns JSON with P50/P95 percentiles
 - Formatted summary: `http://localhost:8080/metrics/summary` - Human-readable format
 
-**Via Command Line:**
-```bash
-# Display formatted summary
-python view_metrics.py
-
-# Export as JSON
-python view_metrics.py --json
-
-# Export full data to file
-python view_metrics.py --export metrics.json
-```
+**Debug Endpoint:**
+- Session inspection: `http://localhost:8080/debug/session` - View current session data and chat history
 
 ### Metrics Output
 
@@ -205,7 +256,7 @@ Retrieval Latency (milliseconds):
   P95: 234.56ms
 ```
 
-**Note**: In multi-worker deployments (e.g., gunicorn with multiple workers), metrics are tracked per worker process. See `METRICS_LIMITATIONS.md` for details.
+**Note**: In multi-worker deployments (e.g., gunicorn with multiple workers), metrics are tracked per worker process. Each worker maintains its own metrics, so the `/metrics` endpoint will show metrics only for the worker that handles that request.
 
 ## AWS CI/CD Deployment with GitHub Actions
 
@@ -348,11 +399,19 @@ The University of Arizona
 - OpenRouter for LLM API access
 - HuggingFace for embeddings models
 
-## Additional Documentation
+## Additional Information
 
-- **`METRICS_README.md`**: Detailed documentation on latency metrics tracking
-- **`METRICS_LIMITATIONS.md`**: Important limitations and considerations for metrics in production
-- **`DEPLOYMENT_EXPLAINED.md`**: Explanation of deployment models (threads vs processes)
+### Session Management
+
+The application uses server-side sessions for storing chat history:
+- **Redis** (recommended): For production deployments with multiple servers
+- **Filesystem** (fallback): Automatically used if Redis is unavailable (development mode)
+
+Sessions are automatically managed and expire after 1 hour of inactivity.
+
+### Debug Endpoints
+
+- `/debug/session`: Inspect current session data, including chat history length and preview
 
 ## Support
 
