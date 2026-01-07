@@ -18,7 +18,7 @@ from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 
-load_dotenv() #Load the environment variables from the .env file
+load_dotenv()  # Load the environment variables from the .env file
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY") or os.urandom(24).hex()
@@ -44,7 +44,7 @@ if REDIS_PASSWORD:
 
 # Create Redis connection for Flask-Session
 # Try to connect to Redis, but fall back to filesystem sessions for development
-USE_REDIS = os.getenv("USE_REDIS", "true").lower() == "true"
+USE_REDIS = os.getenv("USE_REDIS", "false").lower() == "true"
 redis_available = False
 redis_client = None
 

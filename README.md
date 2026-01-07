@@ -166,11 +166,23 @@ This script will:
 
 ### STEP 07 - Run the Application
 
+**Option A: Using `python app.py` (Recommended)**
+
 ```bash
 python app.py
 ```
 
 The application will start on `http://0.0.0.0:8080`
+
+**Option B: Using `flask run`**
+
+If you prefer using Flask's CLI, you need to specify the host and port:
+
+```bash
+flask --app app.py run --host 0.0.0.0 --port 8080
+```
+
+**Note:** If you use `flask run` without specifying `--host` and `--port`, Flask will default to `http://127.0.0.1:5000`, which ignores the settings in your `if __name__ == '__main__'` block.
 
 ### STEP 08 - Access the Chatbot
 
@@ -179,6 +191,8 @@ Open your browser and navigate to:
 ```
 http://localhost:8080
 ```
+
+**Note:** If you're accessing from another device on the same network, use `http://<your-ip-address>:8080` instead of `localhost`.
 
 You should see the medical chatbot interface. Start chatting!
 
