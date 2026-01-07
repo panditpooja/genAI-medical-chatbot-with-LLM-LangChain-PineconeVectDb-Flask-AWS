@@ -19,7 +19,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
-      # Checkers: confirms correct AWS account/region + repo exists
+      # Checker: confirms correct AWS account/region + repo exists
       - name: Debug AWS identity + ECR repo exists
         env:
           ECR_REPOSITORY: ${{ secrets.ECR_REPO }}
