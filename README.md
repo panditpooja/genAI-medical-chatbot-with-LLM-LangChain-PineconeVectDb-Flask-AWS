@@ -22,7 +22,6 @@ A comprehensive medical chatbot application built with LangChain, Pinecone Vecto
 - **OpenRouter API** - LLM provider (using Google Gemma 3 27B model)
 - **Pinecone** - Vector database for embeddings storage
 - **HuggingFace** - Sentence transformers for embeddings
-- **Bootstrap** - Frontend styling
 - **Docker** - Containerization for deployment
 - **AWS EC2** - Cloud hosting
 - **GitHub Actions** - CI/CD pipeline
