@@ -1,392 +1,350 @@
-# GenAI Medical Chatbot (LangChain + Pinecone + Flask + AWS)
+# GenAI Medical Chatbot
 
-A comprehensive medical chatbot application built with LangChain, Pinecone Vector Database, Flask, and deployed on AWS. This chatbot uses Retrieval Augmented Generation (RAG) to provide accurate medical information based on a knowledge base of medical documents.
+A **Retrieval-Augmented Generation (RAG)** medical assistant that answers clinical questions grounded in a real medical knowledge base — not hallucinated responses. Built with LangChain, Pinecone, Flask, and deployed on AWS EC2 via Docker and GitHub Actions CI/CD.
+
+[![Python](https://img.shields.io/badge/Python-3.8+-blue?logo=python)](https://python.org)
+[![LangChain](https://img.shields.io/badge/LangChain-RAG-green?logo=chainlink)](https://langchain.com)
+[![Pinecone](https://img.shields.io/badge/Pinecone-Vector_DB-purple)](https://pinecone.io)
+[![AWS](https://img.shields.io/badge/AWS-EC2%20%7C%20ECR-orange?logo=amazonaws)](https://aws.amazon.com)
+[![Flask](https://img.shields.io/badge/Flask-Web_UI-black?logo=flask)](https://flask.palletsprojects.com)
+
+---
+
+## Overview
+
+Standard LLMs hallucinate on domain-specific medical questions. This system replaces prompt-only responses with a RAG pipeline: medical PDF documents are chunked, embedded, and stored in Pinecone. At query time, relevant chunks are retrieved and injected into the LLM context — grounding every answer in the actual knowledge base.
+
+**Key safeguards built in:**
+- Emergency detection: automatically routes suicidal/crisis queries to appropriate resources
+- Medical focus enforcement: redirects off-topic questions back to medical domain
+- "No match" fallback: when no relevant context is found, directs to a healthcare professional rather than guessing
+
+---
+
+## Architecture
+
+```
+Medical PDF Documents
+        │
+        ▼
+┌─────────────────────┐
+│   store_index.py    │  ← Load PDFs → chunk → embed → store in Pinecone
+└─────────────────────┘
+        │
+        ▼  (at query time)
+┌──────────────────────────────────────────────┐
+│                 RAG Pipeline                 │
+│                                              │
+│  User Query                                  │
+│      │                                       │
+│      ▼                                       │
+│  Pinecone Retrieval  ← semantic search       │
+│      │   (top-3 chunks)                      │
+│      ▼                                       │
+│  LLM (Gemma 3 27B via OpenRouter)            │
+│      │   + retrieved context + chat history  │
+│      ▼                                       │
+│  Grounded Medical Response                   │
+└──────────────────────────────────────────────┘
+        │
+        ▼
+Flask Web UI  →  AWS EC2 (Docker + GitHub Actions CI/CD)
+```
+
+---
 
 ## Features
 
-- 🤖 **RAG-based Medical Assistant**: Answers medical questions using context from uploaded medical documents
-- 💬 **Conversation Memory**: Maintains conversation history during the session
-- 🚨 **Emergency Response**: Automatically detects and responds to suicidal/dangerous queries with appropriate resources
-- 🏥 **Medical Focus**: Automatically redirects non-medical questions to keep conversations on medical topics
-- 🔍 **Semantic Search**: Uses Pinecone vector database for efficient document retrieval
-- 📊 **Performance Monitoring**: Real-time latency metrics tracking with P50/P95 percentiles
-- 🐛 **Debug Tools**: Session inspection endpoint for debugging
-- 💻 **Web Interface**: Clean, responsive chat interface built with Flask and Bootstrap
-- ☁️ **AWS Deployment**: Ready for deployment on AWS EC2 with Docker and GitHub Actions CI/CD
+- **RAG-based Medical Assistant** — answers grounded in uploaded medical documents, not model weights
+- **Conversation Memory** — maintains chat history during the session via Redis (filesystem fallback)
+- **Emergency Response** — detects and routes crisis/suicidal queries to appropriate resources
+- **Medical Focus** — automatically redirects non-medical questions
+- **Semantic Search** — Pinecone vector DB with cosine similarity retrieval
+- **Performance Monitoring** — real-time P50/P95 latency metrics for end-to-end and retrieval latency
+- **Debug Tooling** — session inspection endpoint for development
+- **Responsive Web UI** — Flask + Bootstrap chat interface
+- **Production-Ready Deployment** — Docker + AWS ECR + EC2 + GitHub Actions CI/CD
+
+---
 
 ## Tech Stack
 
-- **Python** - Core programming language
-- **LangChain** - Framework for building LLM applications
-- **Flask** - Web framework for the chat interface
-- **OpenRouter API** - LLM provider (using Google Gemma 3 27B model)
-- **Pinecone** - Vector database for embeddings storage
-- **HuggingFace** - Sentence transformers for embeddings
-- **Docker** - Containerization for deployment
-- **AWS EC2** - Cloud hosting
-- **GitHub Actions** - CI/CD pipeline
+| Component | Technology |
+|---|---|
+| RAG orchestration | LangChain |
+| Vector database | Pinecone (`all-MiniLM-L6-v2`, 384-dim, cosine) |
+| LLM | Google Gemma 3 27B via OpenRouter API |
+| Embeddings | HuggingFace `sentence-transformers/all-MiniLM-L6-v2` |
+| Web framework | Flask + Bootstrap |
+| Session storage | Redis (filesystem fallback) |
+| Containerization | Docker |
+| Cloud hosting | AWS EC2 + ECR |
+| CI/CD | GitHub Actions |
+| Language | Python 3.8+ |
 
-## Prerequisites
+---
 
-- Python 3.8 or higher
-- Anaconda or Python virtual environment
-- Redis server (for session storage)
-- Pinecone API key
-- OpenRouter API key (for LLM access)
-- AWS account (for deployment)
+## Quick Start
 
-## How to Run
-
-### STEP 01 - Clone the Repository
+### STEP 01 — Clone the Repository
 
 ```bash
 git clone https://github.com/panditpooja/genAI-medical-chatbot-with-LLM-LangChain-PineconeVectDb-Flask-AWS.git
 cd genAI-medical-chatbot-with-LLM-LangChain-PineconeVectDb-Flask-AWS
 ```
 
-### STEP 02 - Create a Virtual Environment
+### STEP 02 — Create a Virtual Environment
 
-**Option A: Using Python venv (Recommended)**
-
+**Option A: Python venv (Recommended)**
 ```bash
 python -m venv .venv
+
+# Activate — Windows:
+.venv\Scripts\activate
+
+# Activate — Linux/Mac:
+source .venv/bin/activate
 ```
 
-**Activate the virtual environment:**
-
-- **Windows:**
-  ```bash
-  .venv\Scripts\activate
-  ```
-
-- **Linux/Mac:**
-  ```bash
-  source .venv/bin/activate
-  ```
-
-**Option B: Using Conda**
-
+**Option B: Conda**
 ```bash
 conda create -n medical-chatbot python=3.10
 conda activate medical-chatbot
 ```
 
-### STEP 03 - Install Dependencies
+### STEP 03 — Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### STEP 04 - Install and Start Redis
+### STEP 04 — Install and Start Redis
 
-**Redis is recommended for server-side session storage (chat history).**
-
-**Note:** The application will automatically fall back to filesystem sessions if Redis is not available. However, Redis is recommended for production use.
+Redis is recommended for server-side session storage. The app falls back to filesystem sessions automatically if Redis is unavailable.
 
 **Windows:**
-1. **Option A (Recommended - WSL):**
-   - Install WSL (Windows Subsystem for Linux)
-   - In WSL terminal: `sudo apt-get update && sudo apt-get install redis-server`
-   - Start Redis: `sudo service redis-server start` or `redis-server`
+```bash
+# Option A — WSL (Recommended)
+sudo apt-get update && sudo apt-get install redis-server
+sudo service redis-server start
+```
 
-2. **Option B (Native Windows):**
-   - Download Redis from https://github.com/microsoftarchive/redis/releases
-   - Extract and run `redis-server.exe` from the extracted folder
-   - Or install via Memurai (Redis-compatible): https://www.memurai.com/
+**Option B — Native Windows:**
+- Download from https://github.com/microsoftarchive/redis/releases and run `redis-server.exe`
+- Or install [Memurai](https://www.memurai.com/) (Redis-compatible for Windows)
 
-3. **Option C (Docker):**
-   - Install Docker Desktop
-   - Run: `docker run -d -p 6379:6379 redis:alpine`
+```bash
+# Option C — Docker
+docker run -d -p 6379:6379 redis:alpine
 
-4. **Option D (Skip Redis for Development):**
-   - Set `USE_REDIS=false` in your `.env` file
-   - The app will use filesystem sessions (works for single-user development)
+# Option D — Skip for development: set USE_REDIS=false in .env
+# The app will use filesystem sessions (single-user dev only)
+```
 
 **Linux/Mac:**
 ```bash
 # Ubuntu/Debian
-sudo apt-get install redis-server
-sudo systemctl start redis-server
+sudo apt-get install redis-server && sudo systemctl start redis-server
 
-# Mac (using Homebrew)
-brew install redis
-brew services start redis
-
-# Or run directly
-redis-server
+# Mac (Homebrew)
+brew install redis && brew services start redis
 ```
 
-**Verify Redis is running:**
+**Verify Redis:**
 ```bash
-redis-cli ping
-# Should return: PONG
+redis-cli ping   # Should return: PONG
 ```
 
-### STEP 05 - Configure Environment Variables
+### STEP 05 — Configure Environment Variables
 
-Create a `.env` file in the root directory and add your API credentials:
+Create a `.env` file in the project root:
 
 ```ini
+# Required
 PINECONE_API_KEY=your_pinecone_api_key_here
 OPENROUTER_API_KEY=your_openrouter_api_key_here
-```
 
-**Optional Redis configuration (defaults shown):**
-```ini
+# Optional Redis (defaults shown)
 USE_REDIS=true
 REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_DB=0
 REDIS_PASSWORD=
-```
 
-**Note:** If Redis is not available, the application will automatically fall back to filesystem sessions for development. For production, Redis is recommended for better performance and multi-server support.
-
-**Note:** For production, you can also set `FLASK_SECRET_KEY` in the `.env` file:
-```ini
+# Optional — set for production
 FLASK_SECRET_KEY=your_secret_key_here
 ```
 
-### STEP 06 - Store Embeddings to Pinecone
+### STEP 06 — Store Embeddings in Pinecone
 
-Before running the application, you need to process your medical documents and store them in Pinecone:
+Add your PDF files to the `data/` directory, then run:
 
 ```bash
 python store_index.py
 ```
 
-This script will:
-- Load PDF files from the `data/` directory
-- Split them into chunks
-- Generate embeddings using HuggingFace models
-- Store them in your Pinecone index
+This loads PDFs → splits into chunks → generates embeddings → stores in your Pinecone index.
 
-**Note:** Make sure you have PDF files in the `data/` directory before running this command.
-
-### STEP 07 - Run the Application
-
-**Option A: Using `python app.py` (Recommended)**
+### STEP 07 — Run the Application
 
 ```bash
 python app.py
 ```
 
-The application will start on `http://0.0.0.0:8080`
+The app starts at `http://0.0.0.0:8080`
 
-**Option B: Using `flask run`**
+> **Note:** Using `flask run` without `--host 0.0.0.0 --port 8080` defaults to `127.0.0.1:5000` and ignores the settings in `app.py`.
 
-If you prefer using Flask's CLI, you need to specify the host and port:
+### STEP 08 — Access the Chatbot
 
-```bash
-flask --app app.py run --host 0.0.0.0 --port 8080
-```
+Open `http://localhost:8080` in your browser.
 
-**Note:** If you use `flask run` without specifying `--host` and `--port`, Flask will default to `http://127.0.0.1:5000`, which ignores the settings in your `if __name__ == '__main__'` block.
+> **Accessing from another device on the same network?** Use `http://<your-ip-address>:8080` instead of `localhost`.
 
-### STEP 08 - Access the Chatbot
-
-Open your browser and navigate to:
-
-```
-http://localhost:8080
-```
-
-**Note:** If you're accessing from another device on the same network, use `http://<your-ip-address>:8080` instead of `localhost`.
-
-You should see the medical chatbot interface. Start chatting!
+---
 
 ## Project Structure
 
 ```
 genAI/
-├── app.py                 # Main Flask application
-├── store_index.py         # Script to store embeddings in Pinecone
-├── requirements.txt       # Python dependencies
-├── setup.py              # Package setup file
-├── Dockerfile             # Docker configuration for deployment
-├── .env                  # Environment variables (create this)
-├── data/                 # Medical PDF documents directory
-│   └── Medical_book.pdf
+├── app.py                      # Main Flask application
+├── store_index.py              # Embed documents and store in Pinecone
+├── requirements.txt
+├── setup.py
+├── Dockerfile
+├── .env                        # Create this (not committed)
+├── data/
+│   └── Medical_book.pdf        # Place medical PDFs here
 ├── src/
 │   ├── __init__.py
-│   ├── helper.py         # Utility functions (PDF loading, text splitting, embeddings)
-│   ├── prompt.py         # System prompts for the chatbot
-│   ├── metrics.py        # Latency metrics tracking module
-│   └── retriever_wrapper.py  # Retriever wrapper for latency tracking
+│   ├── helper.py               # PDF loading, text splitting, embeddings
+│   ├── prompt.py               # System prompts
+│   ├── metrics.py              # Latency metrics (P50/P95)
+│   └── retriever_wrapper.py    # Retriever with latency tracking
 ├── templates/
-│   └── chat.html         # Chat interface template
+│   └── chat.html               # Chat UI
 └── static/
-    └── style.css         # Custom styles
+    └── style.css
 ```
 
-## Usage
-
-1. **First Interaction**: The chatbot will greet you if you say hello or introduce yourself
-2. **Medical Questions**: Ask any medical question based on the documents in your knowledge base
-3. **Non-Medical Questions**: The chatbot will politely redirect non-medical questions and ask you to focus on medical topics
-4. **Conversation Context**: The chatbot remembers the conversation during the session
-5. **Emergency Detection**: If you mention suicidal thoughts, the chatbot will provide emergency resources
-6. **Unknown Questions**: If the chatbot doesn't have information, it will suggest consulting healthcare professionals
+---
 
 ## Performance Monitoring
 
-The application tracks latency metrics to monitor performance:
+The application tracks two latency metrics in real time:
 
-### Metrics Tracked
+| Metric | Description |
+|---|---|
+| End-to-End Response Latency | Total time from request to response (seconds) |
+| Retrieval Latency | Time to retrieve chunks from Pinecone (milliseconds) |
 
-- **End-to-End Response Latency**: Total time from request to response (in seconds)
-- **Retrieval Latency**: Time to retrieve documents from Pinecone (in milliseconds)
+**Endpoints:**
+- `http://localhost:8080/metrics` — JSON with P50/P95 percentiles
+- `http://localhost:8080/metrics/summary` — Human-readable summary
+- `http://localhost:8080/debug/session` — Inspect current session data
 
-### View Metrics
-
-**Via Web Browser:**
-- JSON format: `http://localhost:8080/metrics` - Returns JSON with P50/P95 percentiles
-- Formatted summary: `http://localhost:8080/metrics/summary` - Human-readable format
-
-**Debug Endpoint:**
-- Session inspection: `http://localhost:8080/debug/session` - View current session data and chat history
-
-### Metrics Output
-
-The metrics include:
-- **P50 (Median)**: 50th percentile - half of requests are faster, half are slower
-- **P95**: 95th percentile - 95% of requests are faster than this value
-- Sample counts for both metrics
-
-**Example Output:**
+**Sample output:**
 ```
 === Latency Metrics ===
-Worker/Process ID: process-12345 (PID: 12345)
-Total Samples: 150
-Retrieval Samples: 145
+Total Samples: 150 | Retrieval Samples: 145
 
 End-to-End Response Latency (seconds):
-  P50: 2.345s
-  P95: 4.567s
+  P50: 2.345s  |  P95: 4.567s
 
 Retrieval Latency (milliseconds):
-  P50: 123.45ms
-  P95: 234.56ms
+  P50: 123.45ms  |  P95: 234.56ms
 ```
 
-**Note**: In multi-worker deployments (e.g., gunicorn with multiple workers), metrics are tracked per worker process. Each worker maintains its own metrics, so the `/metrics` endpoint will show metrics only for the worker that handles that request.
+> **Note:** In multi-worker deployments (gunicorn), metrics are tracked per worker process.
 
-## AWS CI/CD Deployment with GitHub Actions
+---
 
-This section covers deploying the chatbot to AWS EC2 using Docker and GitHub Actions.
+## AWS CI/CD Deployment
 
-### 1. Login to AWS Console
+### 1. Create IAM User
 
-Log in to your AWS account at https://console.aws.amazon.com
-
-### 2. Create IAM User for Deployment
-
-Create an IAM user with the following access:
-
-**Required Access:**
-- **EC2 Access**: For managing virtual machines
-- **ECR Access**: Elastic Container Registry to store Docker images
-
-**Description:**
-The deployment process involves:
-1. Building a Docker image of the source code
-2. Pushing the Docker image to ECR
-3. Launching an EC2 instance
-4. Pulling the image from ECR in EC2
-5. Running the Docker container in EC2
-
-**Required Policies:**
+Create an IAM user with:
 - `AmazonEC2ContainerRegistryFullAccess`
 - `AmazonEC2FullAccess`
 
-### 3. Create ECR Repository
+### 2. Create ECR Repository
 
-1. Navigate to ECR in AWS Console
-2. Create a new repository (e.g., `medicalbot`)
-3. Save the repository URI (e.g., `315865595366.dkr.ecr.us-east-1.amazonaws.com/medicalbot`)
-
-### 4. Create EC2 Instance
-
-1. Launch an EC2 instance (Ubuntu recommended)
-2. Configure security groups to allow:
-   - SSH (port 22)
-   - HTTP (port 80)
-   - Custom TCP (port 8080 for Flask app)
-3. Save your key pair for SSH access
-
-### 5. Install Docker in EC2
-
-SSH into your EC2 instance and run:
-
-```bash
-# Optional: Update system
-sudo apt-get update -y
-sudo apt-get upgrade -y
-
-# Install Docker
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-
-# Add ubuntu user to docker group
-sudo usermod -aG docker ubuntu
-newgrp docker
-
-# Verify installation
-docker --version
+Navigate to ECR in the AWS Console and create a repository (e.g., `medicalbot`). Save the URI:
+```
+<your-account-id>.dkr.ecr.<your-region>.amazonaws.com/medicalbot
 ```
 
-### 6. Configure EC2 as Self-Hosted Runner
+### 3. Launch EC2 Instance
 
-1. Go to your GitHub repository
-2. Navigate to **Settings > Actions > Runners**
-3. Click **New self-hosted runner**
-4. Select your operating system (Linux)
-5. Follow the instructions to download and configure the runner on your EC2 instance
-6. Run the provided commands one by one on your EC2 instance
+- Ubuntu recommended
+- Security group: open ports 22 (SSH), 80 (HTTP), 8080 (Flask)
+- Save your key pair
 
-### 7. Setup GitHub Secrets
+### 4. Install Docker on EC2
 
-In your GitHub repository, go to **Settings > Secrets and variables > Actions** and add the following secrets:
+```bash
+sudo apt-get update -y && sudo apt-get upgrade -y
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+sudo usermod -aG docker ubuntu
+newgrp docker
+```
 
-- `AWS_ACCESS_KEY_ID` - Your IAM user access key
-- `AWS_SECRET_ACCESS_KEY` - Your IAM user secret key
-- `AWS_DEFAULT_REGION` - Your AWS region (e.g., `us-east-1`)
-- `ECR_REPO` - Your ECR repository URI
-- `PINECONE_API_KEY` - Your Pinecone API key
-- `OPENROUTER_API_KEY` - Your OpenRouter API key
+### 5. Configure EC2 as GitHub Self-Hosted Runner
 
-### 8. GitHub Actions Workflow
+Go to **GitHub repo → Settings → Actions → Runners → New self-hosted runner** and follow the Linux instructions on your EC2 instance.
 
-Create a `.github/workflows/deploy.yml` file in your repository with your deployment workflow. The workflow should:
+### 6. Add GitHub Secrets
 
-1. Build the Docker image
-2. Push to ECR
-3. SSH into EC2
-4. Pull the latest image
-5. Stop and remove old containers
-6. Run the new container
+| Secret | Value |
+|---|---|
+| `AWS_ACCESS_KEY_ID` | IAM user access key |
+| `AWS_SECRET_ACCESS_KEY` | IAM user secret key |
+| `AWS_DEFAULT_REGION` | e.g. `us-east-1` |
+| `ECR_REPO` | ECR repository URI |
+| `PINECONE_API_KEY` | Pinecone API key |
+| `OPENROUTER_API_KEY` | OpenRouter API key |
 
-## Configuration
+The GitHub Actions workflow (`.github/workflows/deploy.yml`) builds the Docker image → pushes to ECR → SSH into EC2 → pulls and runs the updated container.
 
-### Pinecone Index
+---
 
-- **Index Name**: `medical-chatbot`
-- **Dimension**: 384 (for `all-MiniLM-L6-v2` embeddings)
-- **Metric**: Cosine similarity
+## Configuration Reference
 
-### Model Configuration
+**Pinecone Index:**
+- Index name: `medical-chatbot`
+- Dimension: 384 (for `all-MiniLM-L6-v2`)
+- Metric: Cosine similarity
 
-- **LLM**: Google Gemma 3 27B (via OpenRouter)
-- **Embeddings**: `sentence-transformers/all-MiniLM-L6-v2`
-- **Temperature**: 0 (for consistent responses)
-- **Retrieval**: Top 3 most similar chunks
+**Model:**
+- LLM: Google Gemma 3 27B via OpenRouter
+- Embeddings: `sentence-transformers/all-MiniLM-L6-v2`
+- Temperature: 0 (consistent responses)
+- Retrieval: top-3 most similar chunks
 
-### Metrics Configuration
+**Metrics Storage:**
+- Max samples: 10,000 per metric type (configurable in `src/metrics.py`)
+- Storage: in-memory (thread-safe)
+- Persistence: metrics reset on server restart
+- Multi-worker: each gunicorn worker tracks its own metrics (see `METRICS_LIMITATIONS.md`)
 
-- **Max Samples**: 10,000 per metric type (configurable in `src/metrics.py`)
-- **Storage**: In-memory (thread-safe)
-- **Persistence**: Metrics reset on server restart
-- **Multi-Worker**: Metrics tracked per worker process (see `METRICS_LIMITATIONS.md` for details)
+**Session Management:**
+- Sessions expire after 1 hour of inactivity
+- Redis = production recommended; filesystem = auto-fallback for dev
+
+---
+
+## Usage Notes
+
+1. **Medical questions** — ask anything covered by the documents in `data/`
+2. **Non-medical questions** — chatbot politely redirects
+3. **Unknown context** — responds with "consult a healthcare professional" rather than guessing
+4. **Emergency detection** — crisis/suicidal queries trigger immediate resource routing
+5. **Session context** — chat history is maintained within the session
+
+> **Disclaimer:** This chatbot is for informational purposes only and does not replace professional medical advice. Always consult a licensed healthcare professional for medical decisions.
+
+---
 
 ## Contributing
 
@@ -394,42 +352,23 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the LICENSE file for details.
-
-## ✍️ Author
-
-**Pooja Pandit**  
-Master's in Information Science (Machine Learning)  
-The University of Arizona
-
-[![GitHub](https://img.shields.io/badge/GitHub-panditpooja-black?logo=github)](https://github.com/panditpooja)
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-pooja--pandit-blue?logo=linkedin)](https://www.linkedin.com/in/pooja-pandit-177978135/)
+This project is licensed under the [Apache License 2.0](LICENSE).
 
 ## Acknowledgments
 
-- LangChain community for the excellent framework
-- Pinecone for vector database services
-- OpenRouter for LLM API access
-- HuggingFace for embeddings models
-
-## Additional Information
-
-### Session Management
-
-The application uses server-side sessions for storing chat history:
-- **Redis** (recommended): For production deployments with multiple servers
-- **Filesystem** (fallback): Automatically used if Redis is unavailable (development mode)
-
-Sessions are automatically managed and expire after 1 hour of inactivity.
-
-### Debug Endpoints
-
-- `/debug/session`: Inspect current session data, including chat history length and preview
-
-## Support
-
-For issues and questions, please open an issue on the GitHub repository.
+- [LangChain](https://langchain.com) community for the excellent RAG framework
+- [Pinecone](https://pinecone.io) for vector database services
+- [OpenRouter](https://openrouter.ai) for LLM API access
+- [HuggingFace](https://huggingface.co) for sentence transformer embeddings
 
 ---
 
-**Note**: This chatbot is for informational purposes only and should not replace professional medical advice. Always consult with healthcare professionals for medical decisions.
+## Author
+
+**Pooja Diwakar Pandit**  
+M.S. Information Science (Machine Learning) · GPA 4.0 · University of Arizona  
+IEEE First Author · Distinguished Graduate Scholar
+
+[![GitHub](https://img.shields.io/badge/-GitHub-181717?style=flat&logo=github)](https://github.com/panditpooja)
+[![LinkedIn](https://img.shields.io/badge/-LinkedIn-0A66C2?style=flat&logo=linkedin)](https://www.linkedin.com/in/pooja-pandit-177978135/)
+[![Portfolio](https://img.shields.io/badge/-Portfolio-4CAF50?style=flat&logo=firefox)](https://poojapandit.pythonanywhere.com)
